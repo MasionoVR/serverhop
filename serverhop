@@ -1,106 +1,91 @@
+--// Create ScreenGui
 local gui = Instance.new("ScreenGui")
 gui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
 
+--// Create the ServerHop button
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 120, 0, 40)
 
-local file = "serverhoppos.json"
+-- Top right, but shifted left a little (150px)
+button.Position = UDim2.new(1, -150, 0, 20)
+
+button.BackgroundColor3 = Color3.fromRGB(30, 150, 255)
+button.Text = "ServerHop"
+button.Parent = gui
+
+-------------------------------------------------------------------
+-- DRAGGING SYSTEM
+-------------------------------------------------------------------
+local dragging = false
+local dragStart
+local startPos
+local UserInputService = game:GetService("UserInputService")
+
+local function updateDrag(input)
+    local delta = input.Position - dragStart
+    button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+button.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = button.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+button.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+        updateDrag(input)
+    end
+end)
+
+-------------------------------------------------------------------
+-- SERVER HOP SYSTEM
+-------------------------------------------------------------------
+local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
-local saved
-pcall(function()
-	if isfile(file) then
-		saved = HttpService:JSONDecode(readfile(file))
-	end
-end)
-
-
-local b = Instance.new("TextButton")
-b.Size = UDim2.new(0,120,0,40)
-b.BackgroundColor3 = Color3.fromRGB(30,150,255)
-b.Text = "ServerHop"
-
-if saved then
-	b.Position = UDim2.new(saved.XScale, saved.XOffset, saved.YScale, saved.YOffset)
-else
-	b.Position = UDim2.new(1,-150,0,20)
-end
-
-b.Parent = gui
-
-
-local ts = game:GetService("TweenService")
-local dragging = false
-local dragStart, startPos
-
-local function dragMove(inp)
-	local d = inp.Position - dragStart
-	local pos = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-	ts:Create(b, TweenInfo.new(.15, Enum.EasingStyle.Sine), {Position = pos}):Play()
-end
-
-b.InputBegan:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = true
-		dragStart = i.Position
-		startPos = b.Position
-		
-		i.Changed:Connect(function()
-			if i.UserInputState == Enum.UserInputState.End then
-				dragging = false
-				
-				-- save
-				local data = {
-					XScale = b.Position.X.Scale,
-					XOffset = b.Position.X.Offset,
-					YScale = b.Position.Y.Scale,
-					YOffset = b.Position.Y.Offset
-				}
-				writefile(file, HttpService:JSONEncode(data))
-			end
-		end)
-	end
-end)
-
-b.InputChanged:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseMovement and dragging then
-		dragMove(i)
-	end
-end)
-
-
-local TeleportService = game:GetService("TeleportService")
 local placeId = game.PlaceId
-local Http = game:GetService("HttpService")
 
-local function getServer()
-	local list = {}
-	local cur = ""
+local function findServer()
+    local servers = {}
+    local cursor = ""
 
-	repeat
-		local r = Http:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..placeId.."/servers/Public?limit=100&cursor="..cur))
-		for _,v in ipairs(r.data) do
-			if v.playing < v.maxPlayers and v.id ~= game.JobId then
-				table.insert(list, v)
-			end
-		end
-		cur = r.nextPageCursor or ""
-	until cur == "" or #list > 0
+    repeat
+        local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100&cursor="..cursor
+        local response = HttpService:JSONDecode(game:HttpGet(url))
 
-	if #list > 0 then
-		return list[math.random(1, #list)]
-	end
+        for _, server in ipairs(response.data) do
+            if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                table.insert(servers, server)
+            end
+        end
+
+        cursor = response.nextPageCursor or ""
+    until cursor == "" or #servers > 0
+
+    return servers[math.random(1, #servers)]
 end
 
-b.MouseButton1Click:Connect(function()
-	b.Text = "Hopping..."
-	b.Active = false
+button.MouseButton1Click:Connect(function()
+    button.Text = "Hopping..."
+    button.Active = false
 
-	local s = getServer()
-	if s then
-		TeleportService:TeleportToPlaceInstance(placeId, s.id)
-	else
-		b.Text = "No Servers"
-		task.wait(2)
-		b.Text = "ServerHop"
-		b.Active = true
-	end
+    local server = findServer()
+    if server then
+        TeleportService:TeleportToPlaceInstance(placeId, server.id)
+    else
+        button.Text = "No Servers Found"
+        task.wait(2)
+        button.Text = "ServerHop"
+        button.Active = true
+    end
 end)
