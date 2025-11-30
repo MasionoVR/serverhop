@@ -1,0 +1,53 @@
+--// BIG SERVER PRIORITY AUTO-HOP
+--// Always tries to join the fullest servers first
+--// Never waits, never stops, ignores errors
+
+local Http = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+
+local placeId = game.PlaceId
+local localPlayer = Players.LocalPlayer
+
+-- Get server list
+local function getServers(cursor)
+    local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?limit=100&sortOrder=Desc"
+    if cursor then url = url.."&cursor="..cursor end
+
+    local ok, res = pcall(function()
+        return Http:GetAsync(url)
+    end)
+
+    if not ok then return nil end
+
+    return Http:JSONDecode(res)
+end
+
+-- MAIN LOOP
+task.spawn(function()
+    while true do
+        local cursor = nil
+
+        repeat
+            local data = getServers(cursor)
+            if data and data.data then
+
+                -- ALWAYS tries fullest → emptiest
+                for _, server in ipairs(data.data) do
+                    if server.id ~= game.JobId then
+                        -- Try to join instantly
+                        pcall(function()
+                            TeleportService:TeleportToPlaceInstance(placeId, server.id, localPlayer)
+                        end)
+
+                        -- no wait so it spams joins fast
+                    end
+                end
+
+                cursor = data.nextPageCursor
+            else
+                cursor = nil
+            end
+        until not cursor
+    end
+end)
