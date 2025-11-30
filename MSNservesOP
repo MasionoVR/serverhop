@@ -1,0 +1,90 @@
+--// BIG SERVER PRIORITY AUTO-HOP (BUTTON ACTIVATED)
+--// Tries fullest → emptiest servers
+--// 0.25s delay between attempts
+--// Runs ONLY when button is clicked
+
+local Http = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+local placeId = game.PlaceId
+
+--------------------------------------------------------------------
+-- GUI BUTTON
+--------------------------------------------------------------------
+local gui = Instance.new("ScreenGui", localPlayer:WaitForChild("PlayerGui"))
+local button = Instance.new("TextButton", gui)
+
+button.Size = UDim2.new(0, 140, 0, 40)
+button.Position = UDim2.new(1, -160, 0, 40)
+button.Text = "AutoHop"
+button.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+
+--------------------------------------------------------------------
+-- GET SERVERS (FULL → EMPTY)
+--------------------------------------------------------------------
+local function getServers(cursor)
+    local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?limit=100&sortOrder=Desc"
+    if cursor then url = url .. "&cursor=" .. cursor end
+
+    local ok, res = pcall(function()
+        return Http:GetAsync(url)
+    end)
+
+    if not ok then return nil end
+    return Http:JSONDecode(res)
+end
+
+--------------------------------------------------------------------
+-- TELEPORT TRY
+--------------------------------------------------------------------
+local function tryTeleport(serverId)
+    return pcall(function()
+        TeleportService:TeleportToPlaceInstance(placeId, serverId, localPlayer)
+    end)
+end
+
+--------------------------------------------------------------------
+-- MAIN AUTO-HOP FUNCTION
+--------------------------------------------------------------------
+local hopping = false
+
+local function startHop()
+    if hopping then return end
+    hopping = true
+
+    button.Text = "Hopping..."
+
+    task.spawn(function()
+        while hopping do
+            local cursor = nil
+
+            repeat
+                local data = getServers(cursor)
+
+                if data and data.data then
+                    for _, server in ipairs(data.data) do
+                        if server.id ~= game.JobId then
+
+                            tryTeleport(server.id)
+                            task.wait(0.25) -- YOUR DELAY
+
+                        end
+                    end
+
+                    cursor = data.nextPageCursor
+                else
+                    cursor = nil
+                end
+
+            until cursor == nil
+        end
+    end)
+end
+
+--------------------------------------------------------------------
+-- BUTTON CLICK
+--------------------------------------------------------------------
+button.MouseButton1Click:Connect(function()
+    startHop()
+end)
