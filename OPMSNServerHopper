@@ -1,0 +1,126 @@
+--// Create ScreenGui
+local gui = Instance.new("ScreenGui")
+gui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+
+--// Create ServerHop button
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 120, 0, 40)
+button.Position = UDim2.new(1, -150, 0, 20)
+button.BackgroundColor3 = Color3.fromRGB(30, 150, 255)
+button.Text = "ServerHop"
+button.Parent = gui
+
+--// Dragging
+local dragging, dragStart, startPos = false
+local UIS = game:GetService("UserInputService")
+
+local function updateDrag(input)
+	local delta = input.Position - dragStart
+	button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+		startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+button.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = button.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+button.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+		updateDrag(input)
+	end
+end)
+
+
+--// SERVER HOP SYSTEM
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local placeId = game.PlaceId
+
+local retryFlag = false
+
+-- If Roblox blocks/denies teleport → RETRY automatically
+TeleportService.TeleportInitFailed:Connect(function()
+	retryFlag = true
+end)
+
+---------------------------------------------------------------------
+-- GET ALL SERVERS SORTED (MOST FULL → LEAST FULL)
+---------------------------------------------------------------------
+local function getSortedServers()
+	local list = {}
+	local cursor = ""
+
+	repeat
+		local url =
+			"https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100&cursor="..cursor
+
+		local data = HttpService:JSONDecode(game:HttpGet(url))
+
+		for _, s in ipairs(data.data) do
+			if s.id ~= game.JobId then
+				table.insert(list, s)
+			end
+		end
+
+		cursor = data.nextPageCursor or ""
+	until cursor == ""
+
+	table.sort(list, function(a, b)
+		return a.playing > b.playing
+	end)
+
+	return list
+end
+
+---------------------------------------------------------------------
+-- UNSTOPPABLE HOP LOOP
+---------------------------------------------------------------------
+local function hop()
+	button.Text = "Starting..."
+	button.Active = false
+
+	while true do
+		local servers = getSortedServers()
+
+		for _, server in ipairs(servers) do
+			button.Text = "Trying "..server.playing.."/"..server.maxPlayers
+
+			retryFlag = false
+
+			-- TRY TELEPORT
+			pcall(function()
+				TeleportService:TeleportToPlaceInstance(placeId, server.id)
+			end)
+
+			-- WAIT to see if Roblox blocks it
+			local elapsed = 0
+			while elapsed < 3 do
+				if retryFlag then break end -- Roblox blocked teleport → retry instantly
+				task.wait(0.1)
+				elapsed += 0.1
+			end
+
+			if not retryFlag then
+				-- SUCCESS (we will leave the server)
+				return
+			end
+
+			-- FAILED → keep going to next server
+		end
+
+		-- restart entire cycle
+		button.Text = "Restarting..."
+		task.wait(1)
+	end
+end
+
+button.MouseButton1Click:Connect(hop)
